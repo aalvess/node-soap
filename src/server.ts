@@ -11,6 +11,8 @@ import { findPrefix } from './utils';
 import { WSDL } from './wsdl';
 import { BindingElement, IPort } from './wsdl/elements';
 
+const nonIdentifierChars = /[^a-z$_0-9]/i;
+
 let zlib;
 try {
   zlib = require('zlib');
@@ -282,6 +284,7 @@ export class Server extends EventEmitter {
   }
 
   private _process(input, req: Request, cb: (result: any, statusCode?: number) => any) {
+    const soapaction = req.headers['soapaction'].toString().replace(/"/g, '');
     const pathname = url.parse(req.url).pathname.replace(/\/$/, '');
     const obj = this.wsdl.xmlToObject(input);
     const body = obj.Body;
@@ -329,7 +332,15 @@ export class Server extends EventEmitter {
               this.log('info', 'Trying ' + portName + ' from path ' + portPathname);
             }
 
-            if (portPathname === pathname) {
+            if(soapaction) {
+              let methodname: string;
+              for(methodname in port.binding.methods) {
+                  if(port.binding.methods[methodname].soapAction === soapaction) {
+                      return port.binding;
+                  }
+              }
+            }
+            else if (portPathname === pathname) {
               return port.binding;
             }
 
@@ -490,7 +501,10 @@ export class Server extends EventEmitter {
     }
 
     try {
-      method = this.services[serviceName][portName][methodName];
+      let normalizedServiceName = serviceName.replace(nonIdentifierChars, '_');
+      let normalizedPortName = portName.replace(nonIdentifierChars, '_');
+      let normalizedMethodName = methodName.replace(nonIdentifierChars, '_');
+      method = this.services[normalizedServiceName][normalizedPortName][normalizedMethodName];
     } catch (error) {
       return callback(this._envelope('', headers, includeTimestamp));
     }
